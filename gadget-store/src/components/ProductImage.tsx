@@ -9,25 +9,37 @@ export default function ProductImage({
   src,
   alt,
 }: ProductImageProps) {
-  const [hasError, setHasError] = useState(false)
+  const [failedSrc, setFailedSrc] = useState<string | null>(null)
+
+  const imageSrc = src?.trim()
+  const showImage = Boolean(imageSrc) && failedSrc !== imageSrc
 
   return (
-    <div className="flex aspect-square items-center justify-center bg-slate-100 p-6">
-      {src && !hasError ? (
+    <div className="flex aspect-square items-center justify-center overflow-hidden bg-slate-100 p-6">
+      {showImage ? (
         <img
-          src={src}
+          src={imageSrc}
           alt={alt}
           loading="lazy"
           decoding="async"
           width={480}
           height={480}
-          onError={() => setHasError(true)}
+          onError={() => setFailedSrc(imageSrc ?? null)}
           className="h-full w-full object-contain"
         />
       ) : (
-        <span className="text-sm text-slate-500">
-          Image unavailable
-        </span>
+        <div
+          role="img"
+          aria-label={`${alt}: image unavailable`}
+          className="flex h-full w-full items-center justify-center"
+        >
+          <span
+            aria-hidden="true"
+            className="text-sm text-slate-500"
+          >
+            Image unavailable
+          </span>
+        </div>
       )}
     </div>
   )

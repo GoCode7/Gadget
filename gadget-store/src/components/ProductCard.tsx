@@ -5,9 +5,13 @@ import ProductDetails from './ProductDetails'
 
 type ProductCardProps = {
   product: Product
+  preview?: boolean
 }
 
-export default function ProductCard({ product }: ProductCardProps) {
+export default function ProductCard({
+  product,
+  preview = false,
+}: ProductCardProps) {
   const image = product.images[0]
   const isAvailable = product.availability === 'In stock'
 
@@ -32,17 +36,17 @@ export default function ProductCard({ product }: ProductCardProps) {
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
       <ProductImage
-  key={image ?? 'no-image'}
-  src={image}
-  alt={product.name}
-/>
+        key={image ?? 'no-image'}
+        src={image}
+        alt={product.name}
+      />
 
       <div className="flex flex-1 flex-col p-5">
         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
           {product.category} · {product.condition}
         </p>
 
-        <h3 className="mt-2 text-lg font-semibold">
+        <h3 className="mt-2 break-words text-lg font-semibold">
           {product.name}
         </h3>
 
@@ -51,16 +55,21 @@ export default function ProductCard({ product }: ProductCardProps) {
         </p>
 
         <p
-  className={`mt-2 text-sm ${
-    isAvailable ? 'text-green-700' : 'text-slate-500'
-  }`}
->
-  {product.availability}
-</p>
-<ProductDetails product={product} />
+          className={`mt-2 text-sm ${
+            isAvailable ? 'text-green-700' : 'text-slate-500'
+          }`}
+        >
+          {product.availability}
+        </p>
+
+        <ProductDetails product={product} />
 
         <div className="mt-auto pt-5">
-          {isAvailable ? (
+          {preview ? (
+            <p className="rounded-lg bg-slate-100 px-4 py-3 text-center text-sm text-slate-500">
+              Admin preview only
+            </p>
+          ) : isAvailable ? (
             <a
               href={whatsappUrl}
               target="_blank"
