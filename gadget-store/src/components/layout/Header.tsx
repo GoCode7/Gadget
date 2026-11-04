@@ -1,72 +1,196 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { store } from '../../data/store'
 
 const navigation = [
-  { label: 'Products', href: '#products' },
+  { label: 'Shop devices', href: '#products' },
   { label: 'Categories', href: '#categories' },
   { label: 'Contact', href: '#contact' },
 ]
 
 export default function Header() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+
+  function closeMenu() {
+    if (isMenuOpen) {
+      menuButtonRef.current?.focus()
+    }
+
+    setIsMenuOpen(false)
+  }
 
   return (
-    <header className="border-b border-slate-200 bg-white">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex h-20 items-center justify-between">
-          <a
-            href="/"
-            aria-label={`${store.name} home`}
-            className="rounded text-2xl font-extrabold tracking-tight text-blue-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-600"
-          >
-            {store.name}
-          </a>
+    <header
+      className="af-header"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && isMenuOpen) {
+          event.preventDefault()
+          closeMenu()
+        }
+      }}
+    >
+      <a href="#main-content" className="af-skip-link">
+        Skip to content
+      </a>
 
-          <nav
-            aria-label="Main navigation"
-            className="hidden items-center gap-8 md:flex"
-          >
-            {navigation.map((item) => (
-              <a
-                key={item.href}
-                href={item.href}
-                className="rounded text-sm font-medium text-slate-700 hover:text-blue-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-600"
-              >
-                {item.label}
-              </a>
-            ))}
-          </nav>
+      <div className="af-announcement">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+          <p className="flex items-center gap-2">
+            <span
+              className="af-status-dot"
+              aria-hidden="true"
+            />
+            Your next device starts here.
+          </p>
 
-          <button
-            type="button"
-            aria-expanded={isMenuOpen}
-            aria-controls="mobile-navigation"
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-600 md:hidden"
-          >
-            {isMenuOpen ? 'Close menu' : 'Menu'}
-          </button>
+          <span className="hidden sm:block">
+            Nigeria · Prices in NGN
+          </span>
         </div>
+      </div>
 
-        <nav
-          id="mobile-navigation"
-          aria-label="Mobile navigation"
-          hidden={!isMenuOpen}
-          className="border-t border-slate-200 py-4 md:hidden"
-        >
-          <div className="flex flex-col gap-2">
-            {navigation.map((item) => (
-              <a
-                key={item.href}
-                href={item.href}
-                onClick={() => setIsMenuOpen(false)}
-                className="rounded-lg px-3 py-3 text-sm font-medium text-slate-700 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-blue-600"
+      <div className="af-header-surface">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex h-20 items-center gap-5">
+            <Link
+              to="/"
+              onClick={closeMenu}
+              aria-label={`${store.name} home`}
+              className="af-brand"
+            >
+              <span
+                className="af-brand-symbol"
+                aria-hidden="true"
               >
-                {item.label}
-              </a>
-            ))}
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  className="h-6 w-6"
+                >
+                  <path
+                    d="m13.5 3-8 10h6l-1 8 8-11h-6l1-7Z"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+
+              <span className="flex flex-col">
+                <span className="text-2xl font-extrabold tracking-tight text-slate-950">
+                  {store.name}
+                  <span className="text-blue-600">.</span>
+                </span>
+
+                <span className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+                  Your everyday upgrade
+                </span>
+              </span>
+            </Link>
+
+            <nav
+              aria-label="Main navigation"
+              className="ml-auto hidden items-center gap-8 md:flex"
+            >
+              {navigation.map((item) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  className="af-nav-link"
+                >
+                  {item.label}
+                </a>
+              ))}
+            </nav>
+
+            <div className="af-mobile-controls ml-auto flex items-center md:hidden">
+              <button
+                ref={menuButtonRef}
+                type="button"
+                aria-label={
+                  isMenuOpen
+                    ? 'Close navigation'
+                    : 'Open navigation'
+                }
+                aria-expanded={isMenuOpen}
+                aria-controls="mobile-navigation"
+                onClick={() => {
+                  if (isMenuOpen) {
+                    closeMenu()
+                  } else {
+                    setIsMenuOpen(true)
+                  }
+                }}
+                className="af-menu-button"
+              >
+                <span
+                  className={`af-menu-icon ${
+                    isMenuOpen ? 'is-open' : ''
+                  }`}
+                  aria-hidden="true"
+                >
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              </button>
+            </div>
           </div>
-        </nav>
+
+          <div
+            inert={!isMenuOpen}
+            className={`af-mobile-menu md:hidden ${
+              isMenuOpen ? 'is-open' : ''
+            }`}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <nav
+                id="mobile-navigation"
+                aria-label="Mobile navigation"
+                className="border-t border-slate-200 pb-6 pt-3"
+              >
+                {navigation.map((item, index) => (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    onClick={closeMenu}
+                    tabIndex={isMenuOpen ? 0 : -1}
+                    className="af-mobile-link"
+                  >
+                    <span className="flex items-center gap-4">
+                      <span className="text-xs font-medium text-slate-400">
+                        0{index + 1}
+                      </span>
+
+                      {item.label}
+                    </span>
+
+                    <span aria-hidden="true">↗</span>
+                  </a>
+                ))}
+
+                <a
+                  href={`https://wa.me/${store.whatsappNumber}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  tabIndex={isMenuOpen ? 0 : -1}
+                  onClick={closeMenu}
+                  className="af-contact-button mt-4 flex w-full justify-center"
+                >
+                  Enquire on WhatsApp
+                  <span
+                    aria-hidden="true"
+                    className="af-button-arrow"
+                  >
+                    ↗
+                  </span>
+                </a>
+              </nav>
+            </div>
+          </div>
+        </div>
       </div>
     </header>
   )

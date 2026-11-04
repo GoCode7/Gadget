@@ -1,11 +1,37 @@
 import { createContext, useContext } from 'react'
 import type { Product } from '../types/product'
 
-export type NewProduct = Omit<Product, 'id' | 'slug' | 'images'>
+export type NewProduct = Omit<
+  Product,
+  'id' | 'slug' | 'images'
+>
+
+export type ProductEdits = Pick<
+  Product,
+  'name' | 'brand' | 'description' | 'priceInKobo'
+>
 
 type ProductsContextValue = {
   products: Product[]
-  addProduct: (product: NewProduct, image: File) => void
+  loading: boolean
+  loadError: string
+
+  refreshProducts: () => Promise<void>
+
+  addProduct: (
+    product: NewProduct,
+    image: File,
+  ) => Promise<void>
+
+  updateAvailability: (
+    productId: string,
+    availability: Product['availability'],
+  ) => Promise<void>
+
+  updateProduct: (
+    productId: string,
+    changes: ProductEdits,
+  ) => Promise<void>
 }
 
 export const ProductsContext =

@@ -12,12 +12,13 @@ export default function ProductCard({
   product,
   preview = false,
 }: ProductCardProps) {
-  const image = product.images[0]
   const isAvailable = product.availability === 'In stock'
 
   const formattedPrice = new Intl.NumberFormat(store.locale, {
     style: 'currency',
     currency: store.currency,
+    maximumFractionDigits: 2,
+    minimumFractionDigits: product.priceInKobo % 100 === 0 ? 0 : 2,
   }).format(product.priceInKobo / 100)
 
   const message = [
@@ -34,39 +35,52 @@ export default function ProductCard({
     `?text=${encodeURIComponent(message)}`
 
   return (
-    <article className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
-      <ProductImage
-        key={image ?? 'no-image'}
-        src={image}
-        alt={product.name}
-      />
+    <article className="af-device-card">
+      <div className="af-device-visual">
+        <span className="af-device-condition">
+          {product.condition}
+        </span>
+
+        <ProductImage
+          key={product.images[0] ?? 'no-image'}
+          src={product.images[0]}
+          alt={product.name}
+        />
+      </div>
 
       <div className="flex flex-1 flex-col p-5">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-          {product.category} · {product.condition}
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">
+            {product.category}
+          </p>
 
-        <h3 className="mt-2 break-words text-lg font-semibold">
+          <span
+            className={`af-stock-label ${
+              isAvailable ? 'is-available' : ''
+            }`}
+          >
+            <span aria-hidden="true" />
+            {product.availability}
+          </span>
+        </div>
+
+        <h3 className="mt-3 break-words text-lg font-semibold leading-7 tracking-tight text-slate-950">
           {product.name}
         </h3>
 
-        <p className="mt-3 text-xl font-bold">
-          {formattedPrice}
+        <p className="mt-1 text-xs text-slate-500">
+          {product.brand}
         </p>
 
-        <p
-          className={`mt-2 text-sm ${
-            isAvailable ? 'text-green-700' : 'text-slate-500'
-          }`}
-        >
-          {product.availability}
+        <p className="mt-5 text-2xl font-bold tracking-tight text-slate-950">
+          {formattedPrice}
         </p>
 
         <ProductDetails product={product} />
 
-        <div className="mt-auto pt-5">
+        <div className="mt-auto pt-6">
           {preview ? (
-            <p className="rounded-lg bg-slate-100 px-4 py-3 text-center text-sm text-slate-500">
+            <p className="af-device-unavailable">
               Admin preview only
             </p>
           ) : isAvailable ? (
@@ -75,12 +89,25 @@ export default function ProductCard({
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`Enquire about ${product.name} on WhatsApp`}
-              className="block rounded-lg bg-blue-700 px-4 py-3 text-center text-sm font-semibold text-white hover:bg-blue-800 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-600"
+              className="af-device-enquiry"
             >
               Enquire on WhatsApp
+
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className="af-enquiry-arrow h-4 w-4"
+              >
+                <path d="M7 17 17 7M7 7h10v10" />
+              </svg>
             </a>
           ) : (
-            <p className="rounded-lg bg-slate-100 px-4 py-3 text-center text-sm text-slate-500">
+            <p className="af-device-unavailable">
               Currently unavailable
             </p>
           )}
