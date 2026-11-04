@@ -1,14 +1,17 @@
 import { createContext, useContext } from 'react'
 import type { Product } from '../types/product'
 
-export type NewProduct = Omit<
-  Product,
-  'id' | 'slug' | 'images'
->
+export type NewProduct = Omit<Product, 'id' | 'slug' | 'images'>
 
 export type ProductEdits = Pick<
   Product,
-  'name' | 'brand' | 'description' | 'priceInKobo'
+  | 'name'
+  | 'brand'
+  | 'description'
+  | 'priceInKobo'
+  | 'category'
+  | 'condition'
+  | 'specifications'
 >
 
 type ProductsContextValue = {
@@ -31,6 +34,7 @@ type ProductsContextValue = {
   updateProduct: (
     productId: string,
     changes: ProductEdits,
+    replacementImage?: File,
   ) => Promise<void>
 }
 

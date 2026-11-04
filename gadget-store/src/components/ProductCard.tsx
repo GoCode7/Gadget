@@ -21,13 +21,24 @@ export default function ProductCard({
     minimumFractionDigits: product.priceInKobo % 100 === 0 ? 0 : 2,
   }).format(product.priceInKobo / 100)
 
+  const specificationLines = Object.entries(product.specifications)
+    .filter(([label, value]) => label.trim() && value.trim())
+    .map(([label, value]) => `${label.trim()}: ${value.trim()}`)
+
   const message = [
     `Hello ${store.name},`,
-    `I'm interested in ${product.name}.`,
-    `Product ID: ${product.id}`,
-    `Listed price: ${formattedPrice}`,
+    '',
+    "I'm interested in purchasing this product:",
+    '',
+    `Product: ${product.name}`,
+    `Brand: ${product.brand}`,
+    `Category: ${product.category}`,
     `Condition: ${product.condition}`,
-    'Please confirm availability and delivery costs.',
+    `Listed price: ${formattedPrice}`,
+    ...specificationLines,
+    `Product reference: ${product.id}`,
+    '',
+    'Please confirm availability, delivery costs, and how I can complete my purchase.',
   ].join('\n')
 
   const whatsappUrl =

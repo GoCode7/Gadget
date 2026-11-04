@@ -1,23 +1,63 @@
-import { useRef, useState } from 'react'
-import { Link } from 'react-router'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useLocation } from 'react-router'
 import { store } from '../../data/store'
 
 const navigation = [
-  { label: 'Shop devices', href: '#products' },
-  { label: 'Categories', href: '#categories' },
-  { label: 'Contact', href: '#contact' },
+  { label: 'Shop devices', to: '/shop' },
+  { label: 'Categories', to: '/#categories' },
+  { label: 'Contact', to: '/#contact' },
 ]
 
 export default function Header() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const location = useLocation()
+  const { pathname, hash } = location
+
+  const [openMenuLocation, setOpenMenuLocation] =
+    useState<string | null>(null)
+
   const menuButtonRef = useRef<HTMLButtonElement>(null)
 
+  // A menu opened on another navigation entry stays closed.
+  const isMenuOpen = openMenuLocation === location.key
+
   function closeMenu() {
+    // Move focus before making the menu inert.
     if (isMenuOpen) {
-      menuButtonRef.current?.focus()
+      menuButtonRef.current?.focus({ preventScroll: true })
     }
 
-    setIsMenuOpen(false)
+    setOpenMenuLocation(null)
+  }
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(min-width: 768px)')
+
+    function handleDesktopChange(event: MediaQueryListEvent) {
+      if (event.matches) {
+        setOpenMenuLocation(null)
+      }
+    }
+
+    mediaQuery.addEventListener('change', handleDesktopChange)
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleDesktopChange)
+    }
+  }, [])
+
+  function isActive(to: string) {
+    if (to === '/shop') {
+      return pathname === '/shop'
+    }
+
+    return pathname === '/' && to === `/${hash}`
+  }
+
+  function getCurrent(
+    to: string,
+  ): 'page' | 'location' | undefined {
+    if (!isActive(to)) return undefined
+    return to === '/shop' ? 'page' : 'location'
   }
 
   return (
@@ -95,13 +135,22 @@ export default function Header() {
               className="ml-auto hidden items-center gap-8 md:flex"
             >
               {navigation.map((item) => (
-                <a
-                  key={item.href}
-                  href={item.href}
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  aria-current={getCurrent(item.to)}
                   className="af-nav-link"
+                  style={
+                    isActive(item.to)
+                      ? {
+                          color: '#2563eb',
+                          boxShadow: '0 2px 0 #2563eb',
+                        }
+                      : undefined
+                  }
                 >
                   {item.label}
-                </a>
+                </Link>
               ))}
             </nav>
 
@@ -120,7 +169,7 @@ export default function Header() {
                   if (isMenuOpen) {
                     closeMenu()
                   } else {
-                    setIsMenuOpen(true)
+                    setOpenMenuLocation(location.key)
                   }
                 }}
                 className="af-menu-button"
@@ -152,23 +201,31 @@ export default function Header() {
                 className="border-t border-slate-200 pb-6 pt-3"
               >
                 {navigation.map((item, index) => (
-                  <a
-                    key={item.href}
-                    href={item.href}
+                  <Link
+                    key={item.to}
+                    to={item.to}
                     onClick={closeMenu}
+                    aria-current={getCurrent(item.to)}
                     tabIndex={isMenuOpen ? 0 : -1}
                     className="af-mobile-link"
+                    style={
+                      isActive(item.to)
+                        ? {
+                            color: '#2563eb',
+                            backgroundColor: '#eff6ff',
+                          }
+                        : undefined
+                    }
                   >
                     <span className="flex items-center gap-4">
                       <span className="text-xs font-medium text-slate-400">
                         0{index + 1}
                       </span>
-
                       {item.label}
                     </span>
 
                     <span aria-hidden="true">↗</span>
-                  </a>
+                  </Link>
                 ))}
 
                 <a

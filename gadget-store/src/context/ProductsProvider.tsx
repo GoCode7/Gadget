@@ -11,7 +11,10 @@ import type {
   ProductEdits,
 } from './ProductsContext'
 import type { Product } from '../types/product'
-import { supabase } from '../lib/supabase'
+import {
+  getSupabaseClient,
+  isSupabaseConfigured,
+} from '../lib/supabase'
 
 type ProductsProviderProps = {
   children: ReactNode
@@ -45,6 +48,12 @@ const productColumns = [
   'specifications',
 ].join(',')
 
+const imageExtensions: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+}
+
 function toProduct(row: ProductRow): Product {
   return {
     id: row.id,
@@ -61,6 +70,22 @@ function toProduct(row: ProductRow): Product {
   }
 }
 
+function getImageExtension(image: File): string {
+  const extension = imageExtensions[image.type]
+
+  if (!extension) {
+    throw new Error('Choose a JPG, PNG, or WebP image.')
+  }
+
+  if (image.size === 0 || image.size > 5 * 1024 * 1024) {
+    throw new Error(
+      'Choose a non-empty image that is 5 MB or smaller.',
+    )
+  }
+
+  return extension
+}
+
 export default function ProductsProvider({
   children,
 }: ProductsProviderProps) {
@@ -68,15 +93,13 @@ export default function ProductsProvider({
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [authRevision, setAuthRevision] = useState(0)
-
   const requestNumber = useRef(0)
 
-  // Automatic loading: state updates happen after the request.
   const loadProducts = useCallback(async (): Promise<void> => {
     const currentRequest = ++requestNumber.current
 
     try {
-      const { data, error } = await supabase
+      const { data, error } = await getSupabaseClient()
         .from('products')
         .select(productColumns)
         .eq('is_published', true)
@@ -84,7 +107,6 @@ export default function ProductsProvider({
         .returns<ProductRow[]>()
 
       if (currentRequest !== requestNumber.current) return
-
       if (error) throw error
 
       setProducts((data ?? []).map(toProduct))
@@ -103,24 +125,19 @@ export default function ProductsProvider({
     }
   }, [])
 
-  // Manual refresh: immediately show loading feedback.
-  const refreshProducts = useCallback(
-    async (): Promise<void> => {
-      setLoading(true)
-      setLoadError('')
+  const refreshProducts = useCallback(async (): Promise<void> => {
+    setLoading(true)
+    setLoadError('')
+    await loadProducts()
+  }, [loadProducts])
 
-      await loadProducts()
-    },
-    [loadProducts],
-  )
-
-  // Subscribe to authentication changes.
   useEffect(() => {
+    if (!isSupabaseConfigured) return
+
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
+    } = getSupabaseClient().auth.onAuthStateChange(() => {
       requestNumber.current += 1
-
       setProducts([])
       setLoading(true)
       setLoadError('')
@@ -129,13 +146,10 @@ export default function ProductsProvider({
 
     return () => {
       subscription.unsubscribe()
-
-      // Prevent pending requests from updating an unmounted provider.
       requestNumber.current += 1
     }
   }, [])
 
-  // Load initially and whenever authentication changes.
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadProducts()
@@ -144,27 +158,21 @@ export default function ProductsProvider({
     return () => window.clearTimeout(timer)
   }, [authRevision, loadProducts])
 
+  async function verifyAdmin(): Promise<void> {
+    const { data, error } = await getSupabaseClient().rpc('is_admin')
+
+    if (error || data !== true) {
+      throw new Error(
+        'Admin access could not be verified. Sign in again.',
+      )
+    }
+  }
+
   async function addProduct(
     details: NewProduct,
     image: File,
   ): Promise<void> {
-    const extensions: Record<string, string> = {
-      'image/jpeg': 'jpg',
-      'image/png': 'png',
-      'image/webp': 'webp',
-    }
-
-    const extension = extensions[image.type]
-
-    if (!extension) {
-      throw new Error('Choose a JPG, PNG, or WebP image.')
-    }
-
-    if (image.size === 0 || image.size > 5 * 1024 * 1024) {
-      throw new Error(
-        'Choose a non-empty image that is 5 MB or smaller.',
-      )
-    }
+    const extension = getImageExtension(image)
 
     if (
       !Number.isSafeInteger(details.priceInKobo) ||
@@ -173,19 +181,12 @@ export default function ProductsProvider({
       throw new Error('Enter a valid product price.')
     }
 
-    const { data: isAdmin, error: adminError } =
-      await supabase.rpc('is_admin')
+    await verifyAdmin()
 
-    if (adminError || isAdmin !== true) {
-      throw new Error(
-        'Admin access could not be verified. Sign in again.',
-      )
-    }
-
+    const client = getSupabaseClient()
     const id = crypto.randomUUID()
     const imagePath = `${id}/main.${extension}`
-
-    const { error: uploadError } = await supabase.storage
+    const { error: uploadError } = await client.storage
       .from('product-images')
       .upload(imagePath, image, {
         contentType: image.type,
@@ -198,11 +199,11 @@ export default function ProductsProvider({
       )
     }
 
-    const { data: imageData } = supabase.storage
+    const { data: imageData } = client.storage
       .from('product-images')
       .getPublicUrl(imagePath)
 
-    const { error: insertError } = await supabase
+    const { error: insertError } = await client
       .from('products')
       .insert({
         id,
@@ -230,13 +231,12 @@ export default function ProductsProvider({
       ]
 
       if (confirmedRejections.includes(insertError.code)) {
-        // Best-effort cleanup after a confirmed insert rejection.
         try {
-          await supabase.storage
+          await client.storage
             .from('product-images')
             .remove([imagePath])
         } catch {
-          // Preserve the original saving error if cleanup fails.
+          // Keep the original database error as the operation result.
         }
       }
 
@@ -245,115 +245,160 @@ export default function ProductsProvider({
       )
     }
 
-    // The product is already saved. Refresh errors are displayed
-    // through loadError rather than reported as a saving failure.
     await refreshProducts()
   }
-async function updateAvailability(
-  productId: string,
-  availability: Product['availability'],
-): Promise<void> {
-  const { data, error } = await supabase
-    .from('products')
-    .update({ availability })
-    .eq('id', productId)
-    .select('id, availability')
-    .maybeSingle()
 
-  if (error) {
-    throw new Error(
-      'Availability could not be updated. Check your connection and admin access.',
+  async function updateAvailability(
+    productId: string,
+    availability: Product['availability'],
+  ): Promise<void> {
+    const { data, error } = await getSupabaseClient()
+      .from('products')
+      .update({ availability })
+      .eq('id', productId)
+      .select('id, availability')
+      .maybeSingle()
+
+    if (error) {
+      throw new Error(
+        'Availability could not be updated. Check your connection and admin access.',
+      )
+    }
+
+    if (!data) {
+      throw new Error(
+        'The product was not found or you no longer have permission to update it.',
+      )
+    }
+
+    setProducts((currentProducts) =>
+      currentProducts.map((product) =>
+        product.id === productId
+          ? { ...product, availability: data.availability }
+          : product,
+      ),
     )
   }
 
-  if (!data) {
-    throw new Error(
-      'The product was not found or you no longer have permission to update it.',
+  async function updateProduct(
+    productId: string,
+    changes: ProductEdits,
+    replacementImage?: File,
+  ): Promise<void> {
+    const name = changes.name.trim()
+    const brand = changes.brand.trim()
+    const description = changes.description.trim()
+
+    if (
+      name.length === 0 ||
+      name.length > 150 ||
+      brand.length === 0 ||
+      brand.length > 80 ||
+      description.length === 0 ||
+      description.length > 5000
+    ) {
+      throw new Error(
+        'Enter a name, brand, and description within the allowed lengths.',
+      )
+    }
+
+    if (
+      !Number.isSafeInteger(changes.priceInKobo) ||
+      changes.priceInKobo <= 0
+    ) {
+      throw new Error('Enter a valid price greater than zero.')
+    }
+
+    await verifyAdmin()
+
+    const client = getSupabaseClient()
+    let uploadedImagePath: string | undefined
+    let images: string[] | undefined
+
+    if (replacementImage) {
+      const extension = getImageExtension(replacementImage)
+      uploadedImagePath =
+        `${productId}/${crypto.randomUUID()}.${extension}`
+
+      const { error: uploadError } = await client.storage
+        .from('product-images')
+        .upload(uploadedImagePath, replacementImage, {
+          contentType: replacementImage.type,
+          upsert: false,
+        })
+
+      if (uploadError) {
+        throw new Error(
+          'The replacement photo could not be uploaded. Check your connection and storage permissions.',
+        )
+      }
+
+      const { data: imageData } = client.storage
+        .from('product-images')
+        .getPublicUrl(uploadedImagePath)
+      images = [imageData.publicUrl]
+    }
+
+    const { data, error } = await client
+      .from('products')
+      .update({
+        name,
+        brand,
+        category: changes.category,
+        condition: changes.condition,
+        description,
+        price_in_kobo: changes.priceInKobo,
+        specifications: changes.specifications,
+        ...(images ? { images } : {}),
+      })
+      .eq('id', productId)
+      .select(productColumns)
+      .returns<ProductRow[]>()
+      .maybeSingle()
+
+    if (error || !data) {
+      if (uploadedImagePath) {
+        try {
+          await client.storage
+            .from('product-images')
+            .remove([uploadedImagePath])
+        } catch {
+          // Preserve the database result if cleanup fails.
+        }
+      }
+
+      if (error) {
+        throw new Error(
+          'The update could not be confirmed. Refresh the inventory to check the saved details before retrying.',
+        )
+      }
+
+      throw new Error(
+        'The product was not found or you no longer have permission to update it.',
+      )
+    }
+
+    const updatedProduct = toProduct(data)
+    setProducts((currentProducts) =>
+      currentProducts.map((product) =>
+        product.id === productId ? updatedProduct : product,
+      ),
     )
   }
 
-  setProducts((currentProducts) =>
-    currentProducts.map((product) =>
-      product.id === productId
-        ? { ...product, availability: data.availability }
-        : product,
-    ),
-  )
-}
-async function updateProduct(
-  productId: string,
-  changes: ProductEdits,
-): Promise<void> {
-  const name = changes.name.trim()
-  const brand = changes.brand.trim()
-  const description = changes.description.trim()
-
-  if (
-    name.length === 0 ||
-    name.length > 150 ||
-    brand.length === 0 ||
-    brand.length > 80 ||
-    description.length === 0 ||
-    description.length > 5000
-  ) {
-    throw new Error(
-      'Enter a name, brand, and description within the allowed lengths.',
-    )
-  }
-
-  if (
-    !Number.isSafeInteger(changes.priceInKobo) ||
-    changes.priceInKobo <= 0
-  ) {
-    throw new Error('Enter a valid price greater than zero.')
-  }
-
-  const { data, error } = await supabase
-    .from('products')
-    .update({
-      name,
-      brand,
-      description,
-      price_in_kobo: changes.priceInKobo,
-    })
-    .eq('id', productId)
-    .select(productColumns)
-    .returns<ProductRow[]>()
-    .maybeSingle()
-
-  if (error) {
-    throw new Error(
-      'The update could not be confirmed. Refresh the inventory to check the saved details before retrying.',
-    )
-  }
-
-  if (!data) {
-    throw new Error(
-      'The product was not found or you no longer have permission to update it.',
-    )
-  }
-
-  const updatedProduct = toProduct(data)
-
-  setProducts((currentProducts) =>
-    currentProducts.map((product) =>
-      product.id === productId ? updatedProduct : product,
-    ),
-  )
-}
   return (
-  <ProductsContext.Provider
-    value={{
-      products,
-      loading,
-      loadError,
-      refreshProducts,
-      addProduct,
-      updateAvailability,
-      updateProduct,
-    }}
-  >
-    {children}
-  </ProductsContext.Provider>
-)
+    <ProductsContext.Provider
+      value={{
+        products,
+        loading,
+        loadError,
+        refreshProducts,
+        addProduct,
+        updateAvailability,
+        updateProduct,
+      }}
+    >
+      {children}
+    </ProductsContext.Provider>
+  )
 }
