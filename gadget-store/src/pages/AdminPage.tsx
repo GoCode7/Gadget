@@ -24,11 +24,11 @@ export default function AdminPage() {
     loadError,
     refreshProducts,
     updateAvailability,
+    deleteProduct,
   } = useProducts()
 
   const [editingProduct, setEditingProduct] =
     useState<Product | null>(null)
-
   const [updatingId, setUpdatingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
@@ -37,17 +37,28 @@ export default function AdminPage() {
   const [availability, setAvailability] = useState('all')
   const [isAddProductOpen, setIsAddProductOpen] = useState(false)
 
+  const [productToDelete, setProductToDelete] =
+    useState<Product | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+
   const updateInProgress = useRef(false)
+  const deleteInProgress = useRef(false)
   const editHeadingRef = useRef<HTMLHeadingElement>(null)
   const lastEditButtonRef = useRef<HTMLButtonElement | null>(null)
+  const lastDeleteButtonRef = useRef<HTMLButtonElement | null>(null)
   const addProductDialogRef = useRef<HTMLDialogElement>(null)
   const addProductButtonRef = useRef<HTMLButtonElement>(null)
+  const deleteDialogRef = useRef<HTMLDialogElement>(null)
+  const deleteCancelRef = useRef<HTMLButtonElement>(null)
 
   const inventoryBusy =
     loading ||
     updatingId !== null ||
     editingProduct !== null ||
-    isAddProductOpen
+    isAddProductOpen ||
+    productToDelete !== null ||
+    isDeleting
 
   const categories = [
     ...new Set(products.map((product) => product.category)),
@@ -109,22 +120,48 @@ export default function AdminPage() {
 
     if (isAddProductOpen) {
       if (!dialog.open) dialog.showModal()
-
-      const previousOverflow = document.body.style.overflow
-      document.body.style.overflow = 'hidden'
-
-      return () => {
-        document.body.style.overflow = previousOverflow
-      }
-    }
-
-    if (dialog.open) {
+    } else if (dialog.open) {
       dialog.close()
     }
   }, [isAddProductOpen])
 
+  useEffect(() => {
+    const dialog = deleteDialogRef.current
+    if (!dialog) return
+
+    if (productToDelete) {
+      if (!dialog.open) {
+        dialog.showModal()
+        deleteCancelRef.current?.focus()
+      }
+    } else if (dialog.open) {
+      dialog.close()
+    }
+  }, [productToDelete])
+
+  useEffect(() => {
+    if (!isAddProductOpen && !productToDelete) return
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [isAddProductOpen, productToDelete])
+
+  function focusInventory() {
+    document.getElementById('inventory-heading')?.focus({
+      preventScroll: true,
+    })
+  }
+
   function openAddProduct() {
-    if (editingProduct || updatingId || updateInProgress.current) {
+    if (
+      inventoryBusy ||
+      updateInProgress.current ||
+      deleteInProgress.current
+    ) {
       return
     }
 
@@ -132,14 +169,12 @@ export default function AdminPage() {
   }
 
   function closeAddProduct() {
-    // ProductForm marks its form busy during publishing.
     const isPublishing = addProductDialogRef.current?.querySelector(
       '[aria-busy="true"]',
     )
 
     if (isPublishing) return
 
-    // Close before unmounting the form so focus leaves the dialog first.
     addProductDialogRef.current?.close()
     setIsAddProductOpen(false)
     addProductButtonRef.current?.focus({ preventScroll: true })
@@ -183,7 +218,6 @@ export default function AdminPage() {
 
     try {
       await updateAvailability(product.id, nextAvailability)
-
       setActionMessage(
         `${product.name} is now marked ${nextAvailability.toLowerCase()}.`,
       )
@@ -224,7 +258,7 @@ export default function AdminPage() {
       if (button?.isConnected && !button.disabled) {
         button.focus({ preventScroll: true })
       } else {
-        document.getElementById('inventory-heading')?.focus()
+        focusInventory()
       }
     })
   }
@@ -232,6 +266,71 @@ export default function AdminPage() {
   function handleEditSaved(message: string) {
     setActionError('')
     setActionMessage(message)
+  }
+
+  function openDeleteConfirmation(
+    product: Product,
+    button: HTMLButtonElement,
+  ) {
+    if (
+      inventoryBusy ||
+      updateInProgress.current ||
+      deleteInProgress.current
+    ) {
+      return
+    }
+
+    lastDeleteButtonRef.current = button
+    setDeleteError('')
+    setActionError('')
+    setActionMessage('')
+    setProductToDelete(product)
+  }
+
+  function closeDeleteConfirmation() {
+    if (deleteInProgress.current) return
+
+    deleteDialogRef.current?.close()
+    setProductToDelete(null)
+    setDeleteError('')
+
+    window.requestAnimationFrame(() => {
+      const button = lastDeleteButtonRef.current
+
+      if (button?.isConnected && !button.disabled) {
+        button.focus({ preventScroll: true })
+      } else {
+        focusInventory()
+      }
+    })
+  }
+
+  async function handleDelete() {
+    if (!productToDelete || deleteInProgress.current) return
+
+    deleteInProgress.current = true
+    setIsDeleting(true)
+    setDeleteError('')
+
+    try {
+      const message = await deleteProduct(productToDelete.id)
+
+      deleteDialogRef.current?.close()
+      setProductToDelete(null)
+      setActionError('')
+      setActionMessage(message)
+
+      window.requestAnimationFrame(focusInventory)
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error
+          ? error.message
+          : 'The product could not be deleted.',
+      )
+    } finally {
+      deleteInProgress.current = false
+      setIsDeleting(false)
+    }
   }
 
   return (
@@ -255,7 +354,6 @@ export default function AdminPage() {
             >
               A
             </span>
-
             <span>
               <span className="block text-xl font-extrabold tracking-tight">
                 {store.name}
@@ -268,10 +366,9 @@ export default function AdminPage() {
 
           <Link
             to="/"
-            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold transition-colors hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-300"
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-300"
           >
-            View storefront
-            <span aria-hidden="true">↗</span>
+            View storefront <span aria-hidden="true">↗</span>
           </Link>
         </div>
       </header>
@@ -286,11 +383,9 @@ export default function AdminPage() {
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-600">
               Store overview
             </p>
-
             <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-[#0b1739] sm:text-4xl">
               Your store, at a glance.
             </h1>
-
             <p className="mt-3 max-w-xl text-sm leading-7 text-slate-500">
               Manage your catalogue, keep availability current,
               and prepare your next product listing.
@@ -301,14 +396,12 @@ export default function AdminPage() {
             ref={addProductButtonRef}
             type="button"
             onClick={openAddProduct}
-            disabled={editingProduct !== null || updatingId !== null}
+            disabled={inventoryBusy}
             aria-haspopup="dialog"
             aria-controls="add-product-dialog"
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-blue-600/15 transition-colors hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-blue-600/15 hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <span aria-hidden="true" className="text-lg">
-              +
-            </span>
+            <span aria-hidden="true" className="text-lg">+</span>
             Add a product
           </button>
         </div>
@@ -325,11 +418,9 @@ export default function AdminPage() {
               <p className="text-xs font-semibold text-slate-500 sm:text-sm">
                 {stat.label}
               </p>
-
               <p className="mt-4 text-3xl font-extrabold tracking-tight text-[#0b1739]">
                 {loading || loadError ? '—' : stat.value}
               </p>
-
               <p className="mt-2 text-xs leading-5 text-slate-400">
                 {stat.detail}
               </p>
@@ -350,9 +441,8 @@ export default function AdminPage() {
               >
                 Published inventory
               </h2>
-
               <p className="mt-1 text-sm text-slate-500">
-                Review listings and manage stock availability.
+                Review listings and manage your products.
               </p>
             </div>
 
@@ -374,7 +464,6 @@ export default function AdminPage() {
               >
                 Search products
               </label>
-
               <input
                 id="inventory-search"
                 type="search"
@@ -392,7 +481,6 @@ export default function AdminPage() {
               >
                 Category
               </label>
-
               <select
                 id="inventory-category"
                 value={category}
@@ -401,9 +489,7 @@ export default function AdminPage() {
               >
                 <option value="all">All categories</option>
                 {categories.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
+                  <option key={item} value={item}>{item}</option>
                 ))}
               </select>
             </div>
@@ -415,13 +501,10 @@ export default function AdminPage() {
               >
                 Availability
               </label>
-
               <select
                 id="inventory-availability"
                 value={availability}
-                onChange={(event) =>
-                  setAvailability(event.target.value)
-                }
+                onChange={(event) => setAvailability(event.target.value)}
                 className={inputClass}
               >
                 <option value="all">All stock statuses</option>
@@ -463,21 +546,12 @@ export default function AdminPage() {
           )}
 
           {loading ? (
-            <div role="status" className="px-6 py-16 text-center">
-              <span
-                aria-hidden="true"
-                className="mx-auto block h-8 w-8 animate-spin rounded-full border-2 border-blue-100 border-t-blue-600 motion-reduce:animate-none"
-              />
-              <p className="mt-4 text-sm text-slate-500">
-                Loading inventory…
-              </p>
-            </div>
+            <p role="status" className="px-6 py-16 text-center text-sm text-slate-500">
+              Loading inventory…
+            </p>
           ) : loadError ? (
             <div className="p-6">
-              <p role="alert" className="text-sm text-red-700">
-                {loadError}
-              </p>
-
+              <p role="alert" className="text-sm text-red-700">{loadError}</p>
               <button
                 type="button"
                 onClick={() => void handleRefresh()}
@@ -492,7 +566,6 @@ export default function AdminPage() {
               <h3 className="text-lg font-bold text-[#0b1739]">
                 Your catalogue starts here.
               </h3>
-
               <p className="mt-2 text-sm text-slate-500">
                 Click “Add a product” to prepare your first listing.
               </p>
@@ -501,10 +574,8 @@ export default function AdminPage() {
             <>
               <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 sm:px-6">
                 <p role="status" className="text-xs text-slate-500">
-                  Showing {filteredProducts.length} of{' '}
-                  {products.length} products
+                  Showing {filteredProducts.length} of {products.length} products
                 </p>
-
                 {hasFilters && (
                   <button
                     type="button"
@@ -521,7 +592,6 @@ export default function AdminPage() {
                   <h3 className="font-bold text-[#0b1739]">
                     No matching products
                   </h3>
-
                   <p className="mt-2 text-sm text-slate-500">
                     Try another search or clear your filters.
                   </p>
@@ -533,46 +603,27 @@ export default function AdminPage() {
                   tabIndex={0}
                   className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-blue-600"
                 >
-                  <table className="w-full min-w-[960px] text-left text-sm">
+                  <table className="w-full min-w-[1100px] text-left text-sm">
                     <caption className="sr-only">
-                      Published products with editing and
-                      availability controls
+                      Published products with editing, availability, and deletion controls
                     </caption>
-
                     <thead className="border-y border-slate-100 bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                       <tr>
-                        {[
-                          'Product',
-                          'Category',
-                          'Price',
-                          'Availability',
-                          'Actions',
-                        ].map((heading) => (
-                          <th
-                            key={heading}
-                            scope="col"
-                            className="px-6 py-4 font-semibold"
-                          >
-                            {heading}
-                          </th>
-                        ))}
+                        {['Product', 'Category', 'Price', 'Availability', 'Actions'].map(
+                          (heading) => (
+                            <th key={heading} scope="col" className="px-6 py-4 font-semibold">
+                              {heading}
+                            </th>
+                          ),
+                        )}
                       </tr>
                     </thead>
 
                     <tbody className="divide-y divide-slate-100">
                       {filteredProducts.map((product) => (
-                        <tr
-                          key={product.id}
-                          className="transition-colors hover:bg-blue-50/30"
-                        >
-                          <th
-                            scope="row"
-                            className="px-6 py-5 font-semibold text-[#0b1739]"
-                          >
-                            <span className="block">
-                              {product.name}
-                            </span>
-
+                        <tr key={product.id} className="hover:bg-blue-50/30">
+                          <th scope="row" className="px-6 py-5 font-semibold text-[#0b1739]">
+                            <span className="block">{product.name}</span>
                             <span className="mt-1 block text-xs font-normal text-slate-500">
                               {product.brand} · {product.condition}
                             </span>
@@ -585,9 +636,7 @@ export default function AdminPage() {
                           </td>
 
                           <td className="whitespace-nowrap px-6 py-5 font-semibold text-[#0b1739]">
-                            {priceFormatter.format(
-                              product.priceInKobo / 100,
-                            )}
+                            {priceFormatter.format(product.priceInKobo / 100)}
                           </td>
 
                           <td className="px-6 py-5">
@@ -615,12 +664,7 @@ export default function AdminPage() {
                               <button
                                 type="button"
                                 disabled={inventoryBusy}
-                                onClick={(event) =>
-                                  handleEdit(
-                                    product,
-                                    event.currentTarget,
-                                  )
-                                }
+                                onClick={(event) => handleEdit(product, event.currentTarget)}
                                 aria-label={`Edit ${product.name}`}
                                 className="min-h-11 rounded-xl border border-blue-100 bg-blue-50 px-4 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
                               >
@@ -630,9 +674,7 @@ export default function AdminPage() {
                               <button
                                 type="button"
                                 disabled={inventoryBusy}
-                                onClick={() =>
-                                  void handleAvailabilityChange(product)
-                                }
+                                onClick={() => void handleAvailabilityChange(product)}
                                 aria-label={`Mark ${product.name} as ${
                                   product.availability === 'In stock'
                                     ? 'out of stock'
@@ -645,6 +687,20 @@ export default function AdminPage() {
                                   : product.availability === 'In stock'
                                     ? 'Mark out of stock'
                                     : 'Mark in stock'}
+                              </button>
+
+                              <button
+                                type="button"
+                                disabled={inventoryBusy}
+                                onClick={(event) =>
+                                  openDeleteConfirmation(product, event.currentTarget)
+                                }
+                                aria-label={`Delete ${product.name}`}
+                                aria-haspopup="dialog"
+                                aria-controls="delete-product-dialog"
+                                className="min-h-11 rounded-xl border border-red-100 bg-red-50 px-4 py-2 text-xs font-bold text-red-700 hover:bg-red-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                Delete
                               </button>
                             </div>
                           </td>
@@ -672,7 +728,6 @@ export default function AdminPage() {
             >
               Edit product
             </h2>
-
             <EditProductForm
               key={editingProduct.id}
               product={editingProduct}
@@ -698,14 +753,12 @@ export default function AdminPage() {
               <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-600">
                 Grow your catalogue
               </p>
-
               <h2
                 id="add-product-dialog-heading"
                 className="mt-1 text-xl font-extrabold tracking-tight text-[#0b1739]"
               >
                 Add a product
               </h2>
-
               <p
                 id="add-product-dialog-description"
                 className="mt-1 text-xs leading-6 text-slate-500"
@@ -718,7 +771,7 @@ export default function AdminPage() {
               type="button"
               onClick={closeAddProduct}
               aria-label="Close add product"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
             >
               <svg
                 width="20"
@@ -738,6 +791,77 @@ export default function AdminPage() {
           <div className="p-3 sm:p-6">
             {isAddProductOpen && <ProductForm />}
           </div>
+        </dialog>
+
+        <dialog
+          ref={deleteDialogRef}
+          id="delete-product-dialog"
+          aria-labelledby="delete-product-heading"
+          aria-describedby="delete-product-description"
+          aria-busy={isDeleting}
+          onCancel={(event) => {
+            event.preventDefault()
+            closeDeleteConfirmation()
+          }}
+          className="fixed inset-0 m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-3xl border-0 bg-white p-6 text-slate-900 shadow-2xl backdrop:bg-[#0b1739]/70 backdrop:backdrop-blur-sm sm:p-8"
+        >
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-red-600">
+            Permanent action
+          </p>
+
+          <h2
+            id="delete-product-heading"
+            className="mt-3 text-2xl font-extrabold tracking-tight text-[#0b1739]"
+          >
+            Delete this product?
+          </h2>
+
+          <p
+            id="delete-product-description"
+            className="mt-4 text-sm leading-7 text-slate-600"
+          >
+            This permanently removes{' '}
+            <strong className="break-words text-slate-900">
+              {productToDelete?.name}
+            </strong>{' '}
+            from the catalogue. This cannot be undone.
+          </p>
+
+          {deleteError && (
+            <p
+              role="alert"
+              className="mt-5 rounded-xl border border-red-100 bg-red-50 p-4 text-sm leading-6 text-red-800"
+            >
+              {deleteError}
+            </p>
+          )}
+
+          <div className="mt-7 flex flex-wrap justify-end gap-3">
+            <button
+              ref={deleteCancelRef}
+              type="button"
+              disabled={isDeleting}
+              onClick={closeDeleteConfirmation}
+              className={secondaryButton}
+            >
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              disabled={isDeleting || !productToDelete}
+              onClick={() => void handleDelete()}
+              className="min-h-11 rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white hover:bg-red-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-red-600 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isDeleting ? 'Deleting…' : 'Delete product'}
+            </button>
+          </div>
+
+          {isDeleting && (
+            <p role="status" className="mt-4 text-sm text-slate-500">
+              Deleting the product and cleaning up its photos…
+            </p>
+          )}
         </dialog>
 
         <footer className="mt-12 border-t border-slate-200 py-6 text-xs text-slate-400">

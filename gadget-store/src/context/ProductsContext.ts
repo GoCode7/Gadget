@@ -36,6 +36,8 @@ type ProductsContextValue = {
     changes: ProductEdits,
     replacementImage?: File,
   ) => Promise<void>
+
+  deleteProduct: (productId: string) => Promise<string>
 }
 
 export const ProductsContext =

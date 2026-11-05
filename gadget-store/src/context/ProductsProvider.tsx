@@ -385,7 +385,85 @@ export default function ProductsProvider({
       ),
     )
   }
+async function deleteProduct(productId: string): Promise<string> {
+  const supabase = getSupabaseClient()
 
+  const { data: isAdmin, error: adminError } =
+    await supabase.rpc('is_admin')
+
+  if (adminError || isAdmin !== true) {
+    throw new Error(
+      'Admin access could not be verified. Sign in again.',
+    )
+  }
+
+  // Returning the deleted row confirms that a record was removed.
+  const { data, error } = await supabase
+    .from('products')
+    .delete()
+    .eq('id', productId)
+    .select('id, name, images')
+    .maybeSingle()
+
+  if (error || !data) {
+    // Do not remove photos when the database outcome is uncertain.
+    throw new Error(
+      'Deletion could not be confirmed. Refresh the inventory before trying again. The product may already have been removed, or your account may not have permission.',
+    )
+  }
+
+  // Prevent an older inventory request from restoring the deleted row.
+  requestNumber.current += 1
+  setLoading(false)
+  setProducts((current) =>
+    current.filter((product) => product.id !== productId),
+  )
+
+  const successMessage = `${data.name} was deleted successfully.`
+
+  try {
+    const { data: folderData } = supabase.storage
+      .from('product-images')
+      .getPublicUrl(`${productId}/`)
+
+    const images = (data.images ?? []) as string[]
+
+    // Only clean up images inside this product's own storage folder.
+    const paths = [
+      ...new Set(
+        images.flatMap((imageUrl) => {
+          if (!imageUrl.startsWith(folderData.publicUrl)) {
+            return []
+          }
+
+          const filename = imageUrl.slice(folderData.publicUrl.length)
+
+          if (
+            !/^[a-zA-Z0-9_-]+\.(jpg|jpeg|png|webp)$/.test(filename)
+          ) {
+            return []
+          }
+
+          return [`${productId}/${filename}`]
+        }),
+      ),
+    ]
+
+    if (paths.length > 0) {
+      const { error: cleanupError } = await supabase.storage
+        .from('product-images')
+        .remove(paths)
+
+      if (cleanupError) {
+        return `${successMessage} Some stored photos could not be removed.`
+      }
+    }
+  } catch {
+    return `${successMessage} Photo cleanup could not be confirmed.`
+  }
+
+  return successMessage
+}
   return (
     <ProductsContext.Provider
       value={{
@@ -396,6 +474,7 @@ export default function ProductsProvider({
         addProduct,
         updateAvailability,
         updateProduct,
+        deleteProduct,
       }}
     >
       {children}
